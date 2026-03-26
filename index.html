@@ -655,6 +655,7 @@ function CPRStudentView({data, roomCode, onHome}){
     audio.shock();
     setStudentDefibState('idle');
     setStudentShockCount(v=>v+1);
+    // Start 2-min timer
     setShockTimer(0);
     setTimerRunning(true);
   }
@@ -723,8 +724,28 @@ function CPRStudentView({data, roomCode, onHome}){
           <span className="vsub">mmHg</span>
           <span className="vlbl rc" style={{marginTop:4}}>RR</span>
           <span className="vnum rc" style={{fontSize:'1.5rem'}}>{data.rr||0}</span>
-          <span className="vlbl rc" style={{marginTop:4,color:'#ff6666'}}>Shocks</span>
-          <span className="vnum rc" style={{fontSize:'1.5rem',color:'#ff6666'}}>{(data.shockCount||0)+studentShockCount}</span>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:4}}>
+            <div>
+              <span className="vlbl rc" style={{color:'#ff6666'}}>Shocks</span>
+              <span className="vnum rc" style={{fontSize:'1.5rem',color:'#ff6666',display:'block'}}>{(data.shockCount||0)+studentShockCount}</span>
+            </div>
+            {timerRunning&&(
+              <div style={{
+                textAlign:'center',
+                background:shockTimer>=120?'rgba(255,0,0,0.2)':'rgba(255,136,0,0.1)',
+                border:`1px solid ${shockTimer>=120?'#ff0000':'#ff8800'}`,
+                borderRadius:'5px',padding:'2px 4px',
+                animation:shockTimer>=120?'flash 0.5s infinite':'none'
+              }}>
+                <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:'0.95rem',color:shockTimer>=120?'#ff4444':'#ffaa00'}}>
+                  {String(Math.floor(shockTimer/60)).padStart(2,'0')}:{String(shockTimer%60).padStart(2,'0')}
+                </div>
+                <div style={{fontSize:'0.52rem',color:shockTimer>=120?'#ff4444':'#886633',letterSpacing:'0.5px'}}>
+                  {shockTimer>=120?'SHOCK DUE':'post-shock'}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -746,23 +767,7 @@ function CPRStudentView({data, roomCode, onHome}){
           <div className="rrole">Student — CPR</div>
         </div>
 
-        {/* 2-min post-shock timer with alarm at 2min */}
-        <div style={{
-          background: shockTimer>=120?'#1a0000':'#1a0a00',
-          border: `2px solid ${shockTimer>=120?'#ff0000':'#ff8800'}`,
-          borderRadius:'8px',padding:'6px',textAlign:'center',marginTop:'4px',
-          animation: shockTimer>=120?'flash 0.5s infinite':'none'
-        }}>
-          <div style={{fontSize:'0.65rem',color:shockTimer>=120?'#ff4444':'#ff8800',letterSpacing:'2px',textTransform:'uppercase'}}>
-            {shockTimer>=120?'⚡ SHOCK DUE NOW':'Post-Shock Timer'}
-          </div>
-          <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:'1.8rem',color:shockTimer>=120?'#ff4444':'#ffaa00'}}>
-            {timerStr}
-          </div>
-          {shockTimer>0&&<div style={{fontSize:'0.6rem',color:'#6a5a3a',letterSpacing:'1px'}}>
-            {shockTimer<120?`Next shock in ${120-shockTimer}s`:'Reassess rhythm'}
-          </div>}
-        </div>
+
 
         {/* Defib */}
         <div className="defib-panel" style={{marginTop:'6px'}}>
@@ -1276,22 +1281,7 @@ function CPRMonitor({session, onHome}){
             <div className="rrole">CPR Instructor</div>
           </div>
         )}
-        {/* 2-min shock timer for instructor */}
-        {shockCount>0&&(
-          <div style={{
-            background:instrTimer>=120?'#1a0000':'#0a1a0a',
-            border:`2px solid ${instrTimer>=120?'#ff0000':'#1a4a1a'}`,
-            borderRadius:'8px',padding:'5px',textAlign:'center',
-            animation:instrTimer>=120?'flash 0.5s infinite':'none'
-          }}>
-            <div style={{fontSize:'0.62rem',color:instrTimer>=120?'#ff4444':'#4a8a4a',letterSpacing:'2px',textTransform:'uppercase'}}>
-              {instrTimer>=120?'⚡ SHOCK DUE':'Post-Shock'}
-            </div>
-            <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:'1.5rem',color:instrTimer>=120?'#ff4444':'#00ff7f'}}>
-              {String(Math.floor(instrTimer/60)).padStart(2,'0')}:{String(instrTimer%60).padStart(2,'0')}
-            </div>
-          </div>
-        )}
+
 
         {/* CPR toggle */}
         <div className="csec">
