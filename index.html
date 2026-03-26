@@ -213,16 +213,19 @@ function cprETCO2Sample(t, rr, etco2Quality){
 }
 
 // ── BVM breath on SPO2 strip ────────────────────────
-function bvmSPO2Sample(t, breathRate, pi){
-  const cl=60/Math.max(breathRate,1), tc=(t%cl)/cl;
-  // Sharp BVM breath — quick rise, quick fall, long flat baseline
-  // Shows 2 clear waveforms per cycle visible on strip
+function bvmSPO2Sample(t, comprRate, pi){
+  // During CPR: pleth is driven by chest compressions, NOT breath rate
+  // Each compression produces a small pulsatile waveform — low amplitude
+  // Waveform varies with ventilation (amplitude rises during breath)
+  const cl=60/Math.max(comprRate,1), tc=(t%cl)/cl;
+  // Small compression-driven pulse — narrow, low amplitude
   let v=0;
-  if(tc<0.12)       v=Math.pow(Math.sin(tc/0.12*Math.PI/2),1.2);      // rise
-  else if(tc<0.22)  v=1-(tc-0.12)/0.10*0.15;                           // plateau
-  else if(tc<0.32)  v=0.85*Math.exp(-(tc-0.22)/0.06);                  // sharp fall
-  else              v=0;                                                 // flat baseline
-  return Math.max(0.05,Math.min(0.95,0.08+v*pi*0.82));
+  if(tc<0.15)      v=Math.pow(Math.sin(tc/0.15*Math.PI),1.4)*0.7;  // compression upstroke
+  else if(tc<0.28) v=0.7*(1-(tc-0.15)/0.13);                        // downstroke
+  else if(tc<0.38) v=-0.15*Math.sin((tc-0.28)/0.10*Math.PI);        // dicrotic notch
+  else             v=0;                                               // baseline
+  // pi controls amplitude (poor perfusion = low amplitude)
+  return Math.max(0.05,Math.min(0.95,0.30+v*pi*0.65));
 }
 
 function etco2Sample(t,rr,val){
@@ -945,12 +948,13 @@ function CPRStudentView({data, roomCode, onHome}){
     [data.cprActive, data.comprRate, data.ecgRhythm]);
 
   const spo2Gen = useCallback((t)=>{
-    const as = data.airwayStep||0;
+    const as=data.airwayStep||0;
+    const cr=data.comprRate||100;
     if(as===0) return 0.08+(Math.random()-0.5)*0.01;
-    if(as<=2)  return spo2Sample(t,75,0.12);
-    if(as===3) return spo2Sample(t,75,0.20);
-    return bvmSPO2Sample(t,8,0.55);
-  },[data.airwayStep]);
+    if(as<=2)  return bvmSPO2Sample(t,cr,0.15);
+    if(as>=3)  return bvmSPO2Sample(t,cr,0.45);
+    return 0.08;
+  },[data.airwayStep,data.comprRate]);
 
   const ventStartRef = useRef(0);
   useEffect(()=>{
@@ -969,7 +973,7 @@ function CPRStudentView({data, roomCode, onHome}){
     return 0.08;
   },[data.ventCycle, data.etco2Quality, data.airwayStep]);
 
-  const spo2Display = (data.airwayStep||0)===0?'--':(data.airwayStep||0)<=2?'52':(data.airwayStep||0)===3?'60':'88';
+  const spo2Display = (data.airwayStep||0)===0?'--':(data.airwayStep||0)<=2?'52':'60';
   const timerStr = `${String(Math.floor(shockTimer/60)).padStart(2,'0')}:${String(shockTimer%60).padStart(2,'0')}`;
 
   return(
@@ -983,7 +987,7 @@ function CPRStudentView({data, roomCode, onHome}){
         </div>
         <div className="vcell">
           <span className="vlbl sc">SPO2</span>
-          <span className={`vnum sc ${(data.airwayStep||0)<4?'alarm':''}`}
+          <span className={`vnum sc ${(data.airwayStep||0)>0?'alarm':''}`}
             style={{fontSize:(data.airwayStep||0)===0?'1.5rem':'2rem'}}>
             {spo2Display}
           </span>
@@ -1108,6 +1112,7 @@ function CPRMonitor({session, onHome}){
         comprRate:s.comprRate,
         spo2:spo2Val,
         perfusion:perfVal,
+        comprRate:s.comprRate,
         systolic:s.rhythm==='Normal'?90:0,
         diastolic:s.rhythm==='Normal'?60:0,
         bpState:'Normal',
@@ -1128,13 +1133,13 @@ function CPRMonitor({session, onHome}){
     cprActive ? cprECGSample(t,comprRate) : ecgSample(t,rhythm, rhythmHR[rhythm]||0),
     [cprActive,comprRate,rhythm]);
 
-  // SPO2: flat near zero until BVM connected
+  // SPO2: compression-driven pleth during CPR
   const spo2Gen = useCallback((t)=>{
-    if(airwayStep===0) return 0.08 + (Math.random()-0.5)*0.01; // flat line — no reading
-    if(airwayStep<=2)  return spo2Sample(t,75,0.12);           // very poor perfusion 52%
-    if(airwayStep===3) return spo2Sample(t,75,0.20);           // BVM connected 60%
-    return bvmSPO2Sample(t,8,0.55);                            // ventilating 88%
-  },[airwayStep]);
+    if(airwayStep===0) return 0.08+(Math.random()-0.5)*0.01;  // flat — no signal
+    if(airwayStep<=2)  return bvmSPO2Sample(t,comprRate,0.15); // OPA+suction — very low amplitude
+    if(airwayStep>=3)  return bvmSPO2Sample(t,comprRate,0.45); // BVM+ventilating — better amplitude
+    return 0.08;
+  },[airwayStep,comprRate]);
 
   // Track when each ventilation cycle started
   const ventStartRef = useRef(0);
@@ -1192,8 +1197,8 @@ function CPRMonitor({session, onHome}){
       {/* Values — dynamic based on airway steps */}
       {(()=>{
         // SPO2 value based on airway progress
-        const spo2Display = airwayStep===0?'--':airwayStep<=2?'52':airwayStep===3?'60':airwayStep>=4?'88':'--';
-        const spo2Alarm   = airwayStep<4;
+        const spo2Display = airwayStep===0?'--':airwayStep<=2?'52':airwayStep===3?'60':airwayStep>=4?'60':'--';
+
         // ETCO2 value based on airway + quality
         const etco2Display = airwayStep>=4 ? Math.round(4+etco2Quality*26) : 4;
         const rrDisplay    = airwayStep>=4 ? 8 : 0;
@@ -1206,7 +1211,7 @@ function CPRMonitor({session, onHome}){
             </div>
             <div className="vcell">
               <span className="vlbl sc">SPO2</span>
-              <span className={`vnum sc ${spo2Alarm&&airwayStep>0?'alarm':''}`}
+              <span className={`vnum sc ${airwayStep>0?'alarm':''}`}
                 style={{fontSize:airwayStep===0?'1.5rem':'2rem'}}>
                 {spo2Display}
               </span>
