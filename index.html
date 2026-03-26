@@ -719,8 +719,15 @@ function Monitor({session,onHome}){
     }else{
       const id=setInterval(async()=>{
         const d=await fr(roomCode);if(!d)return;
+        if(d.mode==='cpr'){
+          // CPR room — switch to CPR student view
+          setRemoteData(d);
+          setIsCPRMode(true);
+          return;
+        }
+        setIsCPRMode(false);
         setEcgR(d.ecgRhythm);setHr(d.hr);setSpo2Val(d.spo2);setPerf(d.perfusion);
-        setSys(d.systolic);setDia(d.diastolic);setEtco2(d.etco2);setRr(d.rr);
+        setSys(d.systolic);setDia(d.diastolic);setBpSt(d.bpState||'Normal');setEtco2(d.etco2);setRr(d.rr);
       },1000);
       return()=>clearInterval(id);
     }
@@ -950,9 +957,10 @@ function CPRStudentView({data, roomCode, onHome}){
   const spo2Gen = useCallback((t)=>{
     const as=data.airwayStep||0;
     const cr=data.comprRate||100;
-    if(as===0) return 0.08+(Math.random()-0.5)*0.01;
-    if(as<=2)  return bvmSPO2Sample(t,cr,0.15);
-    if(as>=3)  return bvmSPO2Sample(t,cr,0.45);
+    if(as===0) return bvmSPO2Sample(t,cr,0.08);  // poor pleth at start
+    if(as===1) return bvmSPO2Sample(t,cr,0.18);  // OPA
+    if(as===2) return bvmSPO2Sample(t,cr,0.28);  // + Suction
+    if(as>=3)  return bvmSPO2Sample(t,cr,0.50);  // BVM — better
     return 0.08;
   },[data.airwayStep,data.comprRate]);
 
@@ -1133,11 +1141,12 @@ function CPRMonitor({session, onHome}){
     cprActive ? cprECGSample(t,comprRate) : ecgSample(t,rhythm, rhythmHR[rhythm]||0),
     [cprActive,comprRate,rhythm]);
 
-  // SPO2: compression-driven pleth during CPR
+  // SPO2: compression-driven pleth — improves with each airway step
   const spo2Gen = useCallback((t)=>{
-    if(airwayStep===0) return 0.08+(Math.random()-0.5)*0.01;  // flat — no signal
-    if(airwayStep<=2)  return bvmSPO2Sample(t,comprRate,0.15); // OPA+suction — very low amplitude
-    if(airwayStep>=3)  return bvmSPO2Sample(t,comprRate,0.45); // BVM+ventilating — better amplitude
+    if(airwayStep===0) return bvmSPO2Sample(t,comprRate,0.08);  // poor pleth — compressions only, very low amp
+    if(airwayStep===1) return bvmSPO2Sample(t,comprRate,0.18);  // OPA — slightly better
+    if(airwayStep===2) return bvmSPO2Sample(t,comprRate,0.28);  // + Suction — improving
+    if(airwayStep>=3)  return bvmSPO2Sample(t,comprRate,0.50);  // BVM + ventilating — noticeably better
     return 0.08;
   },[airwayStep,comprRate]);
 
